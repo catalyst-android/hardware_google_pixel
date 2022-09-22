@@ -30,6 +30,10 @@
 namespace android {
 namespace perfmgr {
 
+std::string str_sched_boost("SchedBoost");
+std::string str_lpm_boost("DisableLpmSleep");
+short perf_mode = 3;
+
 FileNode::FileNode(std::string name, std::string node_path, std::vector<RequestGroup> req_sorted,
                    std::size_t default_val_index, bool reset_on_init, bool truncate, bool hold_fd)
     : Node(std::move(name), std::move(node_path), std::move(req_sorted), default_val_index,
@@ -42,12 +46,23 @@ std::chrono::milliseconds FileNode::Update(bool log_error) {
     std::size_t value_index = default_val_index_;
     std::chrono::milliseconds expire_time = std::chrono::milliseconds::max();
 
+    short value_index_force = -1;
+    if(perf_mode < 3 && (GetName().compare(str_sched_boost) == 0 || GetName().compare(str_lpm_boost) == 0)) {
+        value_index_force = 1;
+        LOG(VERBOSE) << "DEBUGCATPERF called for " << GetName().c_str() << " " << perf_mode;
+    }
+
     // Find the highest outstanding request's expire time
     for (std::size_t i = 0; i < req_sorted_.size(); i++) {
         if (req_sorted_[i].GetExpireTime(&expire_time)) {
             value_index = i;
             break;
         }
+    }
+
+    if(value_index_force >= 0) {
+        value_index = value_index_force;
+        LOG(VERBOSE) << "DEBUGCATPERF forcing idx " << value_index;
     }
 
     // Update node only if request index changes
@@ -96,6 +111,9 @@ std::chrono::milliseconds FileNode::Update(bool log_error) {
         if (ATRACE_ENABLED()) {
             ATRACE_END();
         }
+    }
+    if(GetName().compare(str_sched_boost) == 0 || GetName().compare(str_lpm_boost) == 0) {
+        perf_mode = ::android::base::GetUintProperty("sys.umg.cpu.perf", 3U);
     }
     return expire_time;
 }
